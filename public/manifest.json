@@ -1,0 +1,25 @@
+{
+  "name": "Гроза",
+  "short_name": "Гроза",
+  "description": "Мессенджер нового поколения",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1e1f22",
+  "theme_color": "#1e1f22",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "https://cdn.poehali.dev/projects/b49116b0-6601-45a6-bb57-9361d80996f5/files/f61ca368-eee3-469d-b1bd-aafa83f6af16.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn.poehali.dev/projects/b49116b0-6601-45a6-bb57-9361d80996f5/files/f61ca368-eee3-469d-b1bd-aafa83f6af16.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
