@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "Get my channels without auth",
+      "method": "GET",
+      "path": "/?action=my",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Search channels",
+      "method": "GET",
+      "path": "/?action=search&q=test",
+      "expectedStatus": 200,
+      "expectedBody": {"channels": []},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
