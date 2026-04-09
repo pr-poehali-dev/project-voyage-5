@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "Search without query param",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Search users by username",
+      "method": "GET",
+      "path": "/?q=test",
+      "expectedStatus": 200,
+      "expectedBody": {"users": []},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
