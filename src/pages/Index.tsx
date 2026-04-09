@@ -128,7 +128,7 @@ export default function Index() {
         <div className="w-8 h-8 bg-[#5865f2] rounded-full flex items-center justify-center shrink-0">
           <Icon name="MessageCircle" size={16} className="text-white" />
         </div>
-        <span className="font-bold text-white text-base hidden sm:block">DiscordApp</span>
+        <span className="font-bold text-white text-base hidden sm:block">Гроза</span>
         <div className="flex-1" />
         <Button
           size="sm"
