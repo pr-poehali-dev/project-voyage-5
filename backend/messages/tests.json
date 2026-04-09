@@ -1,0 +1,18 @@
+{
+  "tests": [
+    {
+      "name": "GET without auth",
+      "method": "GET",
+      "path": "/?with=1",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET without with param",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

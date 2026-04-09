@@ -5,6 +5,7 @@ import Icon from "@/components/ui/icon";
 
 const AUTH_URL = "https://functions.poehali.dev/d14c6eed-44ae-4260-b8bd-12675032087c";
 const USERS_URL = "https://functions.poehali.dev/15e02b39-5819-4ccb-80a1-cf88819dc4a1";
+const MESSAGES_URL = "https://functions.poehali.dev/3d78cfc1-79cb-4cb5-ad1b-bddfe2d4c8f4";
 
 interface User {
   id: number;
@@ -35,7 +36,9 @@ interface Group {
 }
 
 interface Message {
+  id?: number;
   from: string;
+  avatar_color?: string;
   text: string;
   time: string;
   self: boolean;
@@ -61,7 +64,9 @@ export default function Index() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Record<number, Message[]>>({});
+  const [lastMsgId, setLastMsgId] = useState<Record<number, number>>({});
   const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
   const [activeCall, setActiveCall] = useState<{ name: string; avatar: string; color: string; isVideo: boolean } | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
@@ -70,10 +75,16 @@ export default function Index() {
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  // мобильный вид: "list" = список чатов, "chat" = активный чат
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const selectedIdRef = useRef<number | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const lastMsgIdRef = useRef<Record<number, number>>({});
+
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { lastMsgIdRef.current = lastMsgId; }, [lastMsgId]);
 
   useEffect(() => {
     const savedSession = localStorage.getItem("groza_session");
@@ -83,6 +94,38 @@ export default function Index() {
       setUser(JSON.parse(savedUser));
     }
   }, []);
+
+  // Polling: подгружаем новые сообщения каждые 3 сек
+  useEffect(() => {
+    if (!sessionId) return;
+    const interval = setInterval(async () => {
+      const sid = selectedIdRef.current;
+      const sess = sessionIdRef.current;
+      if (!sid || !sess) return;
+      // только для контактов (не групп)
+      if (sid >= 2000) return;
+      const since = lastMsgIdRef.current[sid] || 0;
+      try {
+        const res = await fetch(`${MESSAGES_URL}?with=${sid}&since_id=${since}`, {
+          headers: { "X-Session-Id": sess },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const newMsgs: Message[] = data.messages || [];
+        if (newMsgs.length === 0) return;
+        setMessages((prev) => {
+          const existing = prev[sid] || [];
+          const existingIds = new Set(existing.map((m) => m.id));
+          const fresh = newMsgs.filter((m) => !existingIds.has(m.id));
+          if (fresh.length === 0) return prev;
+          return { ...prev, [sid]: [...existing, ...fresh] };
+        });
+        const maxId = Math.max(...newMsgs.map((m) => m.id || 0));
+        setLastMsgId((prev) => ({ ...prev, [sid]: Math.max(prev[sid] || 0, maxId) }));
+      } catch (_e) { /* игнорируем сетевые ошибки polling */ }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -188,23 +231,77 @@ export default function Index() {
     setMobileView("chat");
   };
 
-  const sendMessage = () => {
-    if (!message.trim() || !selectedId) return;
-    setMessages((prev) => ({
-      ...prev,
-      [selectedId]: [...(prev[selectedId] || []), {
-        from: user?.display_name || "Я",
-        text: message,
-        time: new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
-        self: true,
-      }],
-    }));
+  const loadMessages = async (contactId: number, sess: string) => {
+    try {
+      const since = lastMsgIdRef.current[contactId] || 0;
+      const res = await fetch(`${MESSAGES_URL}?with=${contactId}&since_id=${since}`, {
+        headers: { "X-Session-Id": sess },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const newMsgs: Message[] = data.messages || [];
+      if (newMsgs.length === 0) return;
+      setMessages((prev) => {
+        const existing = prev[contactId] || [];
+        const existingIds = new Set(existing.map((m) => m.id));
+        const fresh = newMsgs.filter((m) => !existingIds.has(m.id));
+        if (fresh.length === 0) return prev;
+        return { ...prev, [contactId]: [...existing, ...fresh] };
+      });
+      const maxId = Math.max(...newMsgs.map((m) => m.id || 0));
+      setLastMsgId((prev) => ({ ...prev, [contactId]: Math.max(prev[contactId] || 0, maxId) }));
+    } catch (_e) { /* игнор */ }
+  };
+
+  const sendMessage = async () => {
+    if (!message.trim() || !selectedId || !sessionId || sending) return;
+    // группы — локально (пока)
+    if (selectedId >= 2000) {
+      setMessages((prev) => ({
+        ...prev,
+        [selectedId]: [...(prev[selectedId] || []), {
+          from: user?.display_name || "Я",
+          text: message,
+          time: new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+          self: true,
+        }],
+      }));
+      setMessage("");
+      return;
+    }
+    const text = message;
     setMessage("");
+    setSending(true);
+    try {
+      const res = await fetch(MESSAGES_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Session-Id": sessionId },
+        body: JSON.stringify({ receiver_id: selectedId, text }),
+      });
+      if (!res.ok) { setMessage(text); return; }
+      const data = await res.json();
+      const msg: Message = data.message;
+      setMessages((prev) => ({
+        ...prev,
+        [selectedId]: [...(prev[selectedId] || []), msg],
+      }));
+      setLastMsgId((prev) => ({ ...prev, [selectedId]: Math.max(prev[selectedId] || 0, msg.id || 0) }));
+      // обновить lastMsg в контакте
+      setContacts((prev) => prev.map((c) =>
+        c.id === selectedId ? { ...c, lastMsg: text, time: msg.time } : c
+      ));
+    } finally {
+      setSending(false);
+    }
   };
 
   const openChat = (id: number) => {
     setSelectedId(id);
     setMobileView("chat");
+    // загрузить историю при открытии (только для реальных контактов)
+    if (id < 2000 && sessionId) {
+      loadMessages(id, sessionId);
+    }
   };
 
   const allChats = activeTab === "friends" ? contacts : groups;
@@ -566,14 +663,17 @@ export default function Index() {
                     placeholder={`Написать ${selected.name}...`}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
                   />
                   <button
                     onClick={sendMessage}
-                    disabled={!message.trim()}
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${message.trim() ? "bg-[#5865f2] hover:bg-[#4752c4] text-white" : "bg-[#2e3035] text-[#4e5058]"}`}
+                    disabled={!message.trim() || sending}
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${message.trim() && !sending ? "bg-[#5865f2] hover:bg-[#4752c4] text-white" : "bg-[#2e3035] text-[#4e5058]"}`}
                   >
-                    <Icon name="Send" size={14} />
+                    {sending
+                      ? <div className="w-3.5 h-3.5 border-2 border-[#4e5058] border-t-white rounded-full animate-spin" />
+                      : <Icon name="Send" size={14} />
+                    }
                   </button>
                 </div>
               </div>
